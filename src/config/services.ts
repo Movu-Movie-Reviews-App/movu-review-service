@@ -1,0 +1,2 @@
+
+export const CONTENT_SERVICE = 'CONTENT_SERVICE' 
