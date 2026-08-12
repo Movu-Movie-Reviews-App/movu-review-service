@@ -2,8 +2,10 @@ import { IsString, IsNotEmpty, Length, IsInt, Min, Max, IsOptional, IsUUID } fro
 
 export class UpdateReviewDto {
 
+    // The review's own id: the row is looked up by it, and ownership is checked
+    // against userId before anything is written.
     @IsUUID()
-    contentId: string
+    id: string
 
     @IsUUID()
     userId: string
