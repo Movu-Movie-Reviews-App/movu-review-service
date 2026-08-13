@@ -1,98 +1,114 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Review Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Review and rating microservice for the Movu platform. Owns user reviews for movies/series and computes weekly top-rated rankings. Communicates exclusively over NATS — all client traffic reaches it through the [client-gateway](../client-gateway).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech stack
 
-## Description
+- [NestJS](https://nestjs.com/) 11 (microservice mode)
+- [NATS](https://nats.io/) transport (`@nestjs/microservices`)
+- [TypeORM](https://typeorm.io/) + PostgreSQL (`pg`)
+- `class-validator` / `class-transformer` for DTO validation
+- `Joi` for environment variable validation
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Architecture
 
-## Project setup
+The service registers as a NATS microservice (no HTTP listener). On every review mutation (create/update/remove) it recalculates and publishes rating stats so the [content-service](../content-service) can keep its aggregate content ratings in sync, and consults content-service for content metadata as needed.
 
-```bash
-$ npm install
+```
+client-gateway --(NATS)--> review-service ── review-db (PostgreSQL)
+                                 |
+                                 └──(NATS event: content.ratingStatsChanged)──> content-service
 ```
 
-## Compile and run the project
+## Message patterns
+
+| Pattern | Description |
+|---|---|
+| `reviews.findByContent` | List reviews for a piece of content |
+| `reviews.weeklyTopRated` | Weekly top-rated content ranking |
+| `reviews.findOneByUserAndContent` | Get a user's review for a piece of content |
+| `reviews.create` | Create a review (triggers a rating stats update) |
+| `reviews.update` | Update a review (triggers a rating stats update) |
+| `reviews.remove` | Delete a review (triggers a rating stats update) |
+
+## Requirements
+
+- Node.js 21+
+- Docker & Docker Compose (recommended)
+- A running PostgreSQL instance and NATS server (provided via Docker Compose)
+
+## Environment variables
+
+Configuration is validated in `src/config/envs.ts`. When run via the root `docker-compose.yml`, these are supplied automatically from the repo-level `.env` file.
+
+| Variable | Description |
+|---|---|
+| `PORT` | Port the service reports as running on (informational; NATS transport has no HTTP port) |
+| `DB_HOST` | PostgreSQL host |
+| `REVIEW_DB_PORT` | PostgreSQL port |
+| `DB_USERNAME` | PostgreSQL username |
+| `DB_PASSWORD` | PostgreSQL password |
+| `REVIEW_DB_NAME` | PostgreSQL database name |
+| `NATS_SERVERS` | Comma-separated list of NATS server URLs |
+
+## Running the service
+
+### With Docker Compose (recommended)
+
+From the repository root:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.template .env
+# fill in the required values in .env
+docker compose up review-service review-db nats-server
 ```
 
-## Run tests
+Or start the entire stack:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose up
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Standalone (local development)
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Create a `.env` file in this directory with the variables listed above, then:
 
-## Resources
+```bash
+npm run start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Scripts
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+| Command | Description |
+|---|---|
+| `npm run start` | Start the service |
+| `npm run start:dev` | Start in watch mode |
+| `npm run start:debug` | Start in watch mode with the debugger attached |
+| `npm run start:prod` | Run the compiled build (`dist/main`) |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run lint` | Lint and auto-fix source files |
+| `npm run test` | Run unit tests |
+| `npm run test:e2e` | Run end-to-end tests |
+| `npm run test:cov` | Run tests with coverage report |
 
-## Support
+## Project structure
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```
+src/
+├── review/
+│   ├── review.controller.ts    # NATS message pattern handlers
+│   ├── review.service.ts       # Business logic, rating stats calculation
+│   ├── dto/                    # Request payload validation
+│   ├── entities/                # TypeORM entity
+│   └── enums/                     # Sort options
+├── infrastructure/
+│   └── messages/
+│       └── content-client/         # NATS client module for calling content-service
+├── config/                           # Environment variable validation
+├── app.module.ts
+└── main.ts
+```
